@@ -5,53 +5,107 @@
 > Date finished: 2026-10-27
 
 ## 1. Goal
-Map the live hosts, their open ports, services, versions and OS — the full nmap workflow plus network-discovery helpers. Placeholders: `<TARGET_IP>`, `<SUB>`.
+Actively map the target — live hosts, open ports, services, versions, OS — plus active DNS interrogation (zone transfers reveal far more than passive DNS). Placeholders: `<TARGET_IP>`, `<DOMAIN>`, `<NS>`, `<NETWORK>` (e.g. `192.168.2.0/24`).
 
-## Network discovery
+## Active DNS & zone transfers
+DNS record types: **A** (IPv4), **AAAA** (IPv6), **NS** (name servers), **MX** (mail), **CNAME** (alias), **TXT**, **SOA** (authority), **PTR** (reverse). A misconfigured **AXFR** dumps the whole zone → internal IPs, hidden subdomains, dev/staging hosts, SRV records.
 ```bash
-sudo arp-scan -I eth1 <TARGET_IP/NETWORK>
-ping <TARGET_IP>
-sudo nmap -sn <TARGET_IP/NETWORK>            # ping sweep
-traceroute google.com                        # Linux  (tracert on Windows)
+# find the name servers first, then try AXFR against each
+host -t NS <DOMAIN>
+dig AXFR @<NS> <DOMAIN>                       # e.g. dig AXFR @nsztm1.digi.ninja zonetransfer.me
+dnsenum <DOMAIN>                              # automated enum + AXFR attempt
+dnsenum --dnsserver <NS> <DOMAIN>
+fierce --domain <DOMAIN>                      # subdomain brute via DNS
+fierce --domain <DOMAIN> --wordlist /path/wordlist.txt
+# individual record lookups
+host -t A|AAAA|MX|TXT|SOA|NS <DOMAIN>
+```
+Transfer **REFUSED** = properly secured; a successful transfer is itself a finding (exposes internal topology). Fix: restrict AXFR to authorized secondaries, DNSSEC, monitor for transfer attempts.
 
-# fping sweep (live hosts only, suppress unreachable noise)
-fping -I eth1 -g <TARGET_IP/NETWORK> -a
-fping -I eth1 -g <TARGET_IP/NETWORK> -a 2>/dev/null
+## Find my own network range
+```bash
+ip a ; ip addr show ; ifconfig ; hostname -I     # e.g. inet 192.168.2.190/24 → scan 192.168.2.0/24
 ```
 
-## Nmap — host/port scanning
+## Host discovery
 ```bash
-nmap <TARGET_IP>
-nmap -Pn <TARGET_IP>                         # skip host discovery
-nmap -p- <TARGET_IP>                         # all 65535 ports
-nmap -p 80 <TARGET_IP>                       # single port
-nmap -p 80,445,3389,8080 <TARGET_IP>         # custom list
-nmap -p1-2000 <TARGET_IP>                    # range
-nmap -F <TARGET_IP> -v                        # fast (top 100)
+sudo nmap -sn <NETWORK>                       # ping sweep (host discovery only)
+sudo nmap -sn -O <NETWORK>                    # + OS hints
+sudo nmap -sn -v <NETWORK>                    # verbose
+sudo nmap -sn -PE -PS21,22,23,25,80,443,3389 <NETWORK>   # combine ICMP + TCP SYN probes
+sudo netdiscover -i eth0 -r <NETWORK>         # ARP-based (local segment, shows MAC vendor)
+fping -I eth1 -g <NETWORK> -a 2>/dev/null     # fping sweep (live only, suppress unreachable)
+traceroute <DOMAIN>                           # path  (tracert on Windows)
+# stealth
+sudo nmap -sn --max-rate 10 <NETWORK>         # slow = quieter
+sudo nmap -sn --randomize-hosts <NETWORK>
+# output + build target list for next phase
+sudo nmap -sn -oA host_discovery <NETWORK>
+sudo nmap -sn <NETWORK> | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' > targets.txt
+```
+Read the output: `Host is up` = responded, `MAC Address` = NIC vendor, plus latency per host.
+
+## Port scanning — scan types
+```bash
+nmap <TARGET_IP>                              # default: TCP SYN, top 1000
+nmap -Pn <TARGET_IP>                          # skip host discovery (Windows often blocks ICMP)
+nmap -F <TARGET_IP>                           # fast (top 100)
+nmap -p 80,443,22 <TARGET_IP>                 # specific ports
+nmap -p 1-1000 <TARGET_IP>                    # range
+nmap -p- <TARGET_IP>                          # all 65535
 nmap -sU <TARGET_IP>                          # UDP
+nmap -sU -p 53,161,162 <TARGET_IP>            # UDP specific
 ```
 
-## Nmap — detection & scripts
+## Detection & NSE
 ```bash
 nmap -sV <TARGET_IP>                          # service/version
-sudo nmap -sV -O <TARGET_IP>                  # + OS detection
-nmap -sC <TARGET_IP>                          # default NSE scripts
-nmap -Pn -F -sV -O -sC <TARGET_IP>            # common combo
-nmap -Pn -F -A <TARGET_IP>                    # aggressive (OS+ver+scripts+traceroute)
-nmap -Pn -F -T5 -sV -O -sC <TARGET_IP> -v     # timing T0 slow … T5 insane
+nmap -O <TARGET_IP>                           # OS
+nmap -A <TARGET_IP>                           # aggressive (OS+ver+scripts+traceroute)
+nmap -sC <TARGET_IP>                          # default scripts
+# NSE categories / individual scripts
+nmap --script safe <TARGET_IP>
+nmap --script vuln <TARGET_IP>                # known-CVE checks
+nmap --script "safe and discovery" <TARGET_IP>
+nmap --script http-enum|smb-security-mode|ssh-auth-methods <TARGET_IP>
 ```
 
-## Nmap — open-ports sweep from a host list
+## Timing & performance
 ```bash
-nmap -Pn -sV -T4 -A -oN ports.txt -p- -iL hosts.txt --open
+nmap -T0 … -T5 <TARGET_IP>                    # paranoid→insane (T3 default, T4 labs)
+nmap --max-rtt-timeout 100ms <TARGET_IP>
+nmap --min-rate 50 --max-rate 100 <TARGET_IP>     # slow network
+nmap --min-rate 500 --max-rate 1000 <TARGET_IP>   # fast network
 ```
 
-## Nmap — output
+## Firewall / IDS evasion (scope + approval only)
 ```bash
-nmap -Pn -F -oN out.txt <TARGET_IP>           # normal
-nmap -Pn -F -oX out.xml <TARGET_IP>           # XML
-nmap -Pn -sV -sC -O -oA out <TARGET_IP>       # all three formats
-nmap -A -oA out <TARGET_IP>
+nmap -T2 --max-parallelism 1 --scan-delay 5s <TARGET_IP>
+nmap -f <TARGET_IP>                           # fragment packets
+nmap -sS -f --data-length 16 <TARGET_IP>
+nmap -D RND:10 <TARGET_IP>                    # 10 random decoys
 ```
 
-> Flow: discover live hosts (arp-scan/fping/`-sn`) → full TCP `-p-` → `-sV -sC -O` on the open ports → save with `-oA` for later import (e.g. into Metasploit `db_import`). `filtered` usually = firewall. Save everything.
+## Output
+```bash
+nmap -oN out.txt <TARGET_IP>                  # normal  (-oX xml / -oG grepable)
+nmap -oA scan <TARGET_IP>                     # all three formats
+nmap -Pn -sV -T4 -A -p- -iL hosts.txt --open -oN ports.txt   # full sweep from host list
+xsltproc scan.xml -o scan.html                # XML → HTML report
+grep "open" scan.nmap | cut -d'/' -f1         # extract open ports
+ndiff baseline.xml current.xml                # diff scans over time
+```
+
+## Real-world recipes
+```bash
+nmap -Pn -sS -sV -sC -O <TARGET_IP>                              # Windows (ICMP blocked → -Pn)
+nmap -Pn -p 135,139,445,3389,5985,5986 -sV <TARGET_IP>          # common Windows services
+nmap -Pn -p 80,443,8000,8080,8443 -sV -sC --script http* <TARGET_IP>   # web
+nmap -Pn -p 443 --script ssl* <TARGET_IP>                        # TLS checks
+```
+
+## Port states & common ports
+- **open** = service accepting · **closed** = reachable, nothing listening · **filtered** = firewall blocking (may be open) · **unfiltered** = reachable, state unknown.
+- Essential ports: 21 FTP · 22 SSH · 23 Telnet · 25 SMTP · 53 DNS · 80 HTTP · 110 POP3 · 135 MSRPC · 139/445 SMB · 143 IMAP · 443 HTTPS · 993 IMAPS · 995 POP3S · 1433 MSSQL · 3306 MySQL · 3389 RDP · 5432 PostgreSQL · 5900 VNC.
+
+> Flow: active DNS (NS → AXFR per server) → find my range → host discovery (`-sn`/netdiscover) → full TCP `-p-` → `-sV -sC -O` on open ports → targeted NSE → save `-oA` and build the host/port list for Enumeration. `filtered` usually = firewall; use `-Pn` when ICMP is blocked.
