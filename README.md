@@ -93,6 +93,11 @@ eJPT-NOTES/
 
 Grouped by the eJPT v2 / PTS course domains. (⬜ Not started · 🟨 In progress · ✅ Done)
 
+### Prerequisites
+| Module | Status | Finished |
+|---|---|---|
+| [Networking Fundamentals](00-networking-fundamentals/) | ✅ | 2026-10-27 |
+
 ### Assessment Methodologies
 | Module | Status | Finished |
 |---|---|---|

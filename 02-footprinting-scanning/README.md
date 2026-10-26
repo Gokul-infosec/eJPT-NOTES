@@ -74,28 +74,54 @@ sudo nmap -sn <NETWORK> | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' > targets.txt  
 
 ## Port scanning — scan types
 ```bash
-nmap <TARGET_IP>                              # default: TCP SYN, top 1000
+nmap <TARGET_IP>                              # default: TCP SYN if root, else connect; top 1000
 nmap -Pn <TARGET_IP>                          # skip host discovery (Windows often blocks ICMP)
 nmap -F <TARGET_IP>                           # fast (top 100)
 nmap -p 80,443,22 <TARGET_IP>                 # specific ports
-nmap -p 1-1000 <TARGET_IP>                    # range
+nmap -p 1-100,1000-2000 <TARGET_IP>           # multiple ranges
 nmap -p- <TARGET_IP>                          # all 65535
-nmap -sU <TARGET_IP>                          # UDP
-nmap -sU -p 53,161,162 <TARGET_IP>            # UDP specific
+nmap --top-ports 1000 <TARGET_IP>
+```
+- **SYN scan `-sS`** (default w/ root, "half-open"/stealth): sends SYN → SYN-ACK = open, RST = closed, no reply = filtered → Nmap replies RST (never completes handshake). Faster, quieter, fewer logs.
+- **TCP Connect `-sT`** (default without root): completes the full handshake → logged on the target. No privileges needed, reliable.
+- **UDP `-sU`**: for DNS/SNMP/DHCP etc. Slow.
+```bash
+nmap -sS -p 80,445,3389 <TARGET_IP>
+nmap -sT -T4 -p- <TARGET_IP>
+nmap -sU -p 53,137,138,139 <TARGET_IP>
+nmap -sS -sU -p- -T4 -A -v <TARGET_IP>        # TCP + UDP combined, aggressive
 ```
 
-## Detection & NSE
+## Service & OS detection
 ```bash
 nmap -sV <TARGET_IP>                          # service/version
-nmap -O <TARGET_IP>                           # OS
-nmap -A <TARGET_IP>                           # aggressive (OS+ver+scripts+traceroute)
-nmap -sC <TARGET_IP>                          # default scripts
-# NSE categories / individual scripts
+nmap -sV --version-intensity 0-9 <TARGET_IP>  # probe depth (5 default, 9 max, 3 light/fast)
+nmap -O <TARGET_IP>                            # OS fingerprint
+nmap -O --osscan-guess <TARGET_IP>             # guess when no exact match (e.g. "Linux 3.2-4.9 (92%)")
+nmap -O --max-os-tries 1 <TARGET_IP>           # faster (5 = thorough)
+nmap -sS -sV -O -T4 -p- <TARGET_IP>            # full recon on one host
+```
+Workflow: host discovery → port scan → `-sV` → `-O`. Services on **non-standard ports** (e.g. MongoDB on 6421) are why you scan `-p-`, not just top-1000.
+
+## NSE (Nmap Scripting Engine)
+Lua scripts in `/usr/share/nmap/scripts/` (`.nse`). Categories: **default**, **safe**, **discovery**, **auth**, **brute**, **vuln**, **exploit** (brute/exploit are intrusive — scope + approval).
+```bash
+nmap -sC <TARGET_IP>                          # default (safe) scripts
+nmap -A <TARGET_IP>                           # aggressive = -sV + -sC + -O + --traceroute
+# find scripts
+ls /usr/share/nmap/scripts/ | grep http
+nmap --script-help=ftp-anon                   # what a script does
+# run scripts
 nmap --script safe <TARGET_IP>
 nmap --script vuln <TARGET_IP>                # known-CVE checks
 nmap --script "safe and discovery" <TARGET_IP>
-nmap --script http-enum|smb-security-mode|ssh-auth-methods <TARGET_IP>
+nmap --script=mongodb-info,memcached-info -p 6421,4128 <TARGET_IP>   # specific (comma list)
+nmap --script=ftp* -p 21 <TARGET_IP>          # wildcard category
+nmap --script=http-enum,http-title -p 80,443,8080 <TARGET_IP>
+# if a script won't auto-run, pin the port; debug with --script-trace
+nmap -sV --script=<name> -p <port> --script-trace <TARGET_IP>
 ```
+NSE often leaks the OS/kernel/hostname and misconfigs (e.g. `Authentication: not required` on memcached/mongodb) — feed that straight into vulnerability research.
 
 ## Timing & performance
 | Template | Name | Spacing | ~1000 ports | Use |
