@@ -68,9 +68,20 @@ relevant), techniques, and a fix/notes summary.
 
 ```
 eJPT-NOTES/
+├── 01-information-gathering/
+├── 02-footprinting-scanning/
+├── 03-enumeration/
+├── 04-vulnerability-assessment/
+├── 05-system-host-based-attacks/
+├── 06-network-based-attacks/
+├── 07-metasploit-framework/
+├── 08-exploitation/
+├── 09-post-exploitation/
+├── 10-social-engineering/
+├── 11-web-enumeration/
+├── 12-web-attacks/
 ├── cheatsheets/        ← command quick-reference, grouped by topic
-├── templates/          ← note layout every module follows
-└── (module folders added as each section is filed)
+└── templates/          ← note layout every module follows
 ```
 
 > No exam content, flags, or copied course material is published here — just my own
@@ -80,33 +91,28 @@ eJPT-NOTES/
 
 ## 📈 Progress
 
-Roadmap based on the eJPT v2 / PTS course domains. Folders are added as each section is
-filed. (⬜ Not started · 🟨 In progress · ✅ Done)
+Grouped by the eJPT v2 / PTS course domains. (⬜ Not started · 🟨 In progress · ✅ Done)
 
 ### Assessment Methodologies
 | Module | Status | Finished |
 |---|---|---|
-| Information Gathering | ⬜ | |
-| Footprinting & Scanning | ⬜ | |
-| Enumeration | ⬜ | |
-| Vulnerability Assessment | ⬜ | |
-| Auditing Fundamentals | ⬜ | |
+| [Information Gathering](01-information-gathering/) | ✅ | 2026-10-27 |
+| [Footprinting & Scanning](02-footprinting-scanning/) | ✅ | 2026-10-27 |
+| [Enumeration](03-enumeration/) | ✅ | 2026-10-27 |
+| [Vulnerability Assessment](04-vulnerability-assessment/) | ✅ | 2026-10-27 |
 
 ### Host & Network Penetration Testing
 | Module | Status | Finished |
 |---|---|---|
-| System / Host-Based Attacks | ⬜ | |
-| Network-Based Attacks | ⬜ | |
-| The Metasploit Framework (MSF) | ⬜ | |
-| Exploitation | ⬜ | |
-| Post-Exploitation | ⬜ | |
-| Social Engineering | ⬜ | |
+| [System / Host-Based Attacks](05-system-host-based-attacks/) | ✅ | 2026-10-27 |
+| [Network-Based Attacks](06-network-based-attacks/) | ✅ | 2026-10-27 |
+| [The Metasploit Framework (MSF)](07-metasploit-framework/) | ✅ | 2026-10-27 |
+| [Exploitation](08-exploitation/) | ✅ | 2026-10-27 |
+| [Post-Exploitation](09-post-exploitation/) | ✅ | 2026-10-27 |
+| [Social Engineering](10-social-engineering/) | ✅ | 2026-10-27 |
 
 ### Web Application Penetration Testing
 | Module | Status | Finished |
 |---|---|---|
-| Introduction to the Web & HTTP Protocol | ⬜ | |
-| Web Application Penetration Testing | ⬜ | |
-
-> Roadmap mirrors the standard course outline — I'll adjust the module list to match
-> whatever material I actually file.
+| [Web Enumeration & Scanning](11-web-enumeration/) | ✅ | 2026-10-27 |
+| [Web Application Attacks](12-web-attacks/) | ✅ | 2026-10-27 |
