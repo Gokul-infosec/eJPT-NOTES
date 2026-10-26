@@ -93,20 +93,92 @@ sudo nano /etc/hosts                 # map target FQDN → IP for lab access
 ```
 Indicators: `*.ns.cloudflare.com` NS = Cloudflare; `MX *.google.com` + `include:_spf.google.com` TXT = G Suite; interesting subdomains → `admin.*` `api.*` `dev.*` `staging.*` `mail.*`.
 
-## Subdomains, WAF, emails
+## WAF detection (WAFW00F)
+Fingerprints the WAF/CDN (Cloudflare, Sucuri, Imperva, AWS WAF, ModSecurity, Akamai…) from HTTP responses — passive, normal requests.
 ```bash
-sublist3r -d <DOMAIN>                        # subdomain enum
-theHarvester -d <DOMAIN> ; theHarvester -d <DOMAIN> -b all   # emails / hosts / names
-wafw00f -l ; wafw00f <HOST> -a               # WAF detection
+wafw00f -l                                   # list detectable WAFs
+wafw00f <DOMAIN>                             # single target  (or https://<DOMAIN>)
+wafw00f -a <DOMAIN>                          # test for ALL WAFs (don't stop at first)
+wafw00f -v <DOMAIN>                          # verbose
+wafw00f -i domains.txt -o batch_results.txt  # batch from file → output
+wafw00f http://<DOMAIN>:8080                 # specific port
+# cross-validate
+whatweb <DOMAIN> | grep -i waf ; nmap --script http-waf-detect <DOMAIN>
+```
+Output: "is behind Cloudflare WAF" (detected) / "does not seem to be behind a WAF" / "seems to be behind a WAF — could not identify". Custom/proprietary WAFs may not be detected. Identify the WAF → research its bypasses before active testing.
+
+## Subdomain enumeration (Sublist3r + others)
+Passive OSINT from search engines + public DBs — no direct target interaction.
+```bash
+sublist3r -d <DOMAIN>
+sublist3r -d <DOMAIN> -e google,bing,yahoo,baidu,ask,netcraft,dnsdumpster,virustotal,threatcrowd
+sublist3r -d <DOMAIN> -v -o subdomains.txt   # verbose + save
+sublist3r -d <DOMAIN> -b -t 10               # bruteforce + threads
+sublist3r -d <DOMAIN> -p 80,443,8080         # verify on ports
+# combine multiple sources + crt.sh, dedupe:
+sublist3r -d <DOMAIN> -o sublist3r.txt
+amass enum -passive -d <DOMAIN> -o amass.txt
+assetfinder --subs-only <DOMAIN> > assetfinder.txt
+curl -s "https://crt.sh/?q=%25.<DOMAIN>&output=json" | jq -r '.[].name_value' | sort -u > cert.txt
+cat *.txt | sort -u > all_subdomains.txt
+# validate which resolve:
+while read s; do host "$s" &>/dev/null && echo "$s"; done < all_subdomains.txt
+```
+Reduce threads (`-t 5`) + add delays if search engines CAPTCHA/block. Interesting patterns: `admin.* api.* mail.* dev.* staging.* vpn.* portal.*`.
+
+## Email harvesting (theHarvester)
+```bash
+theHarvester -d <DOMAIN> -l 500 -b all               # emails + subdomains, all sources, 500 results
+theHarvester -d <DOMAIN> -b google,linkedin,bing
+theHarvester -d <DOMAIN> -l 1000 -b all -v -f out.txt   # verbose + save (html/xml)
+theHarvester -d <DOMAIN> -b linkedin -l 300          # employee discovery
+theHarvester -d <DOMAIN> -b crtsh                    # cert transparency
+theHarvester -d <DOMAIN> -b dnsdumpster -l 200
+# sources: google bing linkedin twitter yahoo dnsdumpster crtsh virustotal threatcrowd anubis
+# API keys (shodan/securitytrails/github) → /etc/theHarvester/api-keys.yaml
+# extract just emails:
+theHarvester -d <DOMAIN> -b all -l 500 | grep -E "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+```
+
+## Other DNS/subdomain tools
+```bash
 dnsenum <HOST> ; fierce --domain <HOST>
 ```
 
-## Google dorks
+## Google dorking
 ```text
-site:            site:*.sitename.com         intitle:        intitle:index of
-inurl:           filetype:                   cache:
-inurl:auth_user_file.txt   inurl:passwd.txt   inurl:wp-config.bak
+# targeting
+site:<DOMAIN>                         site:*.<DOMAIN>               # domain / subdomains
+inurl:admin site:<DOMAIN>             inurl:login site:<DOMAIN>
+# file types
+filetype:pdf site:<DOMAIN>            filetype:xlsx|doc|sql|bak|env|config site:<DOMAIN>
+# title / content
+intitle:"index of" site:<DOMAIN>      intitle:"login"|"admin" site:<DOMAIN>
+intext:"password"|"confidential" site:<DOMAIN>
+# config / creds
+inurl:"wp-config.php" filetype:php    intitle:"index of" "wp-config.php.bak"
+inurl:"auth_user_file.txt"            filetype:htpasswd           inurl:"password.txt"
+filetype:sql "INSERT INTO" site:<DOMAIN>
+# combine / exclude
+site:<DOMAIN> (inurl:admin | inurl:login) (filetype:php | filetype:html)
+site:<DOMAIN> intitle:"index of" -inurl:wp-content -inurl:public
+cache:<DOMAIN>                        # Google cache (date-range operators deprecated)
 ```
+- **GHDB** — curated dork database: exploit-db.com/google-hacking-database (juicy info, file containers, vuln files, server disclosures).
+- **Wayback Machine** — historical snapshots: `https://web.archive.org/web/*/https://<DOMAIN>` (or a timestamp `.../web/20160101000000/https://<DOMAIN>`).
+- Space out queries / rotate IP to avoid CAPTCHAs. Never download unauthorized data.
+
+## Leaked credentials / breach databases
+Check whether harvested emails appear in known breaches (passive, org password-hygiene assessment).
+```bash
+# Have I Been Pwned (haveibeenpwned.com) — free web lookup, or API:
+curl -s "https://haveibeenpwned.com/api/v3/breachedaccount/<email>" -H "hibp-api-key: <KEY>"
+# password check via k-anonymity (send only first 5 SHA-1 chars):
+curl -s "https://api.pwnedpasswords.com/range/<first5-sha1-chars>"
+```
+- Other sources: **DeHashed**, **BreachDirectory**, **Intelx.io** (more detail, often paid).
+- Feeds into password-spray prep — only with explicit written authorization and in scope.
+- Defensive takeaway for the report: force resets on breached accounts, enforce MFA, awareness training.
 
 ## Host discovery (nmap basics)
 ```bash
