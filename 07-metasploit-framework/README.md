@@ -31,10 +31,30 @@ sessions -u 1                  # upgrade shell → meterpreter
 
 ## Workspaces & DB
 ```text
-workspace ; workspace -a <NEW> ; workspace <NAME> ; workspace -d <NAME>
-db_nmap -Pn -sV -O <TARGET_IP>                 # nmap inside MSF
-db_import <XML_FILE>                           # import external nmap -oX
+sudo service postgresql start ; msfconsole ; db_status    # "Connected to msf"
+msfdb reinit                                   # fix a broken DB
+workspace                                      # list
+workspace -a <NEW> ; workspace <NAME>          # create / switch
+workspace -r <OLD> <NEW> ; workspace -d <NAME> ; workspace default
+# import external nmap (must be -oX XML) / scan from inside MSF
+db_import <scan.xml>                           # "Successfully imported" ; if no hosts → check XML/perms
+db_nmap -Pn -sV -O <TARGET_IP>                 # auto-saved to DB
 hosts ; services ; vulns ; loot ; creds ; notes
+db_export -f xml backup.xml
+```
+
+## Querying & reusing DB data
+```text
+hosts -c address,os_name -S Windows            # columns + search filter
+services -p 22,80,443                          # by port
+services -s http -c port,info                  # by service name
+services -S "Apache" -c host,port,info         # search banner
+services -u                                    # unknown services
+hosts -o /tmp/hosts.csv ; services -o /tmp/services.csv    # export CSV
+# feed discovered hosts straight into a scanner:
+services -s http --rhosts -o /tmp/web.txt
+use auxiliary/scanner/http/http_version ; set RHOSTS file:/tmp/web.txt ; run
+services -s ssh --rhosts                       # set RHOSTS from DB web/ssh hosts inline
 ```
 
 ## Meterpreter
@@ -47,13 +67,16 @@ getenv PATH ; ifconfig ; idletime ; checksum md5 /bin/bash ; clearev
 hashdump ; shell ; execute -f ifconfig ; resource <file.txt>
 ```
 
-## DB-backed enum & scanning
+## Auxiliary scanners (non-exploit; no payload; results → DB; can run through a pivot)
 ```text
-workspace -a <host_enum>
-nmap -Pn -sV -O <TARGET_IP> -oX scan.xml ; db_import scan.xml ; hosts ; services ; vulns
-# port scan module
-use auxiliary/scanner/portscan/tcp            # set RHOSTS / PORTS 1-1000
-use auxiliary/scanner/discovery/udp_sweep
+search portscan
+# port scan variants:
+use auxiliary/scanner/portscan/tcp            # set RHOSTS / PORTS 1-10000 / THREADS (1 per host)
+#   options: CONCURRENCY (ports/host), DELAY, JITTER, TIMEOUT (ms)
+use auxiliary/scanner/portscan/syn            # stealth half-open ; set THREADS 20
+use auxiliary/scanner/portscan/ack            # firewall rule mapping
+use auxiliary/scanner/portscan/xmas
+use auxiliary/scanner/discovery/udp_sweep     # set RHOSTS ; BATCHSIZE
 # service scanners
 use auxiliary/scanner/ftp/{ftp_version,ftp_login,anonymous}
 use auxiliary/scanner/smb/{smb_enumusers,smb_enumshares,smb_login}
@@ -62,6 +85,18 @@ use auxiliary/scanner/mysql/{mysql_version,mysql_login,mysql_hashdump,mysql_sche
 use auxiliary/scanner/ssh/{ssh_version,ssh_login,ssh_enumusers}
 use auxiliary/scanner/smtp/{smtp_version,smtp_enum}
 ```
+
+## Pivoting — scan an internal subnet through a session
+```text
+# from a Meterpreter session on a dual-homed host:
+meterpreter > run post/windows/gather/arp_scanner RHOSTS 10.10.10.0/24   # discover internal hosts
+meterpreter > background
+route add 10.10.10.0/24 1                      # route that subnet via session 1
+route print
+use auxiliary/scanner/portscan/tcp             # now reaches the internal net
+set RHOSTS 10.10.10.3 ; set PORTS 21,22,80,443,3389 ; set THREADS 5 ; run
+```
+Auxiliary scanners run over the route, so you map the internal network without any external tool touching it. (Fuller pivoting — `autoroute`, `portfwd`, socks — is in module 09.)
 
 ## Vulnerability scanning in MSF
 ```text
@@ -109,3 +144,5 @@ makerc out.rc                           # export typed commands to a resource sc
 ```
 
 > Default start: `service postgresql start && msfconsole -q` → `db_status` → `setg RHOSTS/RHOST` → `workspace -a <svc>` → `db_nmap -sS -sV -O` → for every exploit check `options`/`info`, set, `run`. Upgrade shells with `sessions -u`.
+>
+> Practice labs: **Metasploitable 3** (`git clone rapid7/metasploitable3` → `./build.sh windows2008|ubuntu1404`, needs Vagrant+VirtualBox), **Metasploitable 2**, **VulnHub Kioptrix Level 1** — scan → import → exploit end to end.
