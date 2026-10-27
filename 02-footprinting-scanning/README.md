@@ -181,6 +181,10 @@ grep "open" scan.gnmap ; awk '/open/ {print $2}' scan.gnmap
 xsltproc scan.xml -o scan.html ; xmllint scan.xml ; ndiff baseline.xml current.xml
 ```
 ```text
+# MSF-prep scan → import
+nmap -Pn -sV -O -oX scan.xml <TARGET_IP>                      # minimal import
+nmap -Pn -sS -sV -O --script vuln -p- -oX full_scan.xml <TARGET_IP>   # comprehensive (+vuln NSE)
+head -n 20 scan.xml                           # sanity-check XML before import
 # import into Metasploit
 service postgresql start ; msfconsole
 workspace -a <engagement>
@@ -189,6 +193,8 @@ db_nmap -sS -sV -O <TARGET_IP>                # scan from inside MSF (auto-saved
 db_export -f xml backup.xml
 hosts -c address,os_name ; services -c port,proto,name,info
 ```
+
+> Practice lab: **Metasploitable 2** (TryHackMe room, or local VM) — intentionally vulnerable Linux (vsftpd 2.3.4, OpenSSH 4.7, Apache 2.2.8, etc.); scan it with the above and import to MSF to rehearse the recon→exploit handoff. No creds needed for the scan phase.
 
 ## Real-world recipes
 ```bash
