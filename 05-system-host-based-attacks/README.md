@@ -7,6 +7,29 @@
 ## 1. Goal
 Exploit host-level services to get a foothold, then escalate to SYSTEM/root — Windows and Linux. Placeholders: `<TARGET_IP>`, `<LOCAL_HOST_IP>`, `<LOCAL_PORT>`, `<USER>`, `<PW>`.
 
+## Windows attack surface (context)
+~70% market share + backward-compat + weak default hardening = big surface. Built in C/C++ → buffer overflows, UAF, integer overflow, SEH overwrites. Vuln categories: **info disclosure**, **buffer overflow** (stack/heap/integer/format-string), **RCE** (SMB/RDP/HTTP, macros, scripting engines), **privilege escalation** (service misconfig, token impersonation, DLL hijack, UAC bypass), **DoS**.
+Notable CVEs to know: **MS08-067** (Conficker), **MS17-010 / EternalBlue** (WannaCry), **BlueKeep CVE-2019-0708** (RDP), **Zerologon CVE-2020-1472** (Netlogon→DA). Enterprise: Kerberoasting, AS-REP roasting, PtH, DCSync (see module 09 / AD).
+```text
+systeminfo | findstr /B /C:"OS Name" /C:"OS Version"   # version → patch level
+wmic qfe list brief | findstr /C:"KB"                   # installed patches
+```
+
+## Frequently exploited Windows services (detect & enumerate)
+| Service | Port | Detect / enumerate | Note |
+|---|---|---|---|
+| **IIS** | 80/443 | `nmap -sV -p80,443` · `curl -I http://<TARGET_IP>/` | ASP.NET/PHP; SharePoint/OWA; misconfig → web shell |
+| **WebDAV** | 80/443 | `curl -X OPTIONS http://<TARGET_IP>/ -I` · `curl -X PUT .../test.txt -d x` | HTTP verbs PROPFIND/MKCOL/PUT/DELETE; arbitrary upload |
+| **SMB** | 445 | `nmap -p445 --script smb-protocols` · `smbclient -L //<TARGET_IP>/ -N` · `enum4linux` | ~100% of hosts; EternalBlue/Romance |
+| **RDP** | 3389 | `nmap -p3389 --script rdp-ntlm-info` · `crowbar -b rdp -s <TARGET_IP>/32 -u <USER> -C <wl> -n 1` | brute/BlueKeep; lateral movement |
+| **WinRM** | 5985/5986 | `nmap -p5985,5986 --script winrm-version` · `Test-WSMan <TARGET_IP>` · `evil-winrm -i <TARGET_IP> -u <USER> -p <PW>` | direct cmd exec with creds |
+```bash
+# one-shot Windows service sweep
+nmap -sS -sV -p 80,443,445,3389,5985,5986 --open <TARGET_IP>
+nmap --script smb-vuln*,rdp-vuln*,http-vuln* <TARGET_IP>
+```
+Defaults: Win10/11 client = SMB on, RDP/WinRM off; Server = SMB+RDP on, WinRM often on. Hardening (report side): disable SMBv1 (`Set-SmbServerConfiguration -EnableSMB1Protocol $false`), RDP NLA + non-default port, remove WebDAV module, patch.
+
 ---
 # Windows Exploitation
 
