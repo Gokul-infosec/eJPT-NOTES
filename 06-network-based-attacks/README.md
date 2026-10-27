@@ -7,6 +7,21 @@
 ## 1. Goal
 Capture, filter and analyse network traffic, and abuse L2 to intercept it (ARP poisoning). Placeholders: `<FILE>.pcap`, `<IP>`, `<SSID>`, `<TARGET_IP>`, `<HOST_IP>`.
 
+## Concept
+Network-based attacks target **protocols** (ARP, DNS, DHCP…) not a specific OS. The main one here is **MITM** — the attacker sits as a proxy between two endpoints, done via **ARP poisoning**. **Promiscuous mode** (Wireshark/tshark) lets you read all packets on the segment.
+
+## TShark — capture flags
+```text
+tshark -i <IFACE>            # live capture       -r <FILE>.pcap   # read a file
+       -Y "<display filter>" # post-capture filter  -f "<capture filter>"  # BPF capture filter
+       -w <out> -F pcapng    # write out (format)  -z <stat> -q     # statistics
+       -c <N> --color -Tfields -e <field>           # count / colour / extract fields
+# live examples (same filters work on -r too):
+tshark -i eth1 -Y "http"
+tshark -i eth1 -Y "http.request.method==GET && http.host==google.com" -Tfields -e ip.src
+tshark -i eth1 -Y "http contains password"
+```
+
 ## Wireshark display filters
 ```text
 wireshark -i eth1
@@ -43,6 +58,9 @@ tshark -r <FILE>.pcap -Y "eapol"                                               #
 tshark -r <FILE>.pcap -Y "wlan.fc.type_subtype==8" -Tfields -e wlan.ssid -e wlan.bssid
 tshark -r <FILE>.pcap -Y "wlan.ssid==<SSID>" -Tfields -e wlan_radio.channel    # channel
 tshark -r <FILE>.pcap -Y "wlan.ta==<DEVICE_MAC> && http" -Tfields -e http.user_agent
+tshark -r <FILE>.pcap -Y "wlan.ssid==<SSID>" -Tfields -e wlan.bssid               # BSSID of an SSID
+tshark -r <FILE>.pcap -Y "wlan.fixed.capabilities.privacy==0"                      # OPEN (unencrypted) wifi
+# eapol = the 4-way WPA handshake (crack target / cafe-latte attack)
 ```
 
 ## ARP poisoning (MITM — arpspoof)
