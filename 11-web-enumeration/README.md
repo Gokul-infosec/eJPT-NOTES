@@ -7,6 +7,11 @@
 ## 1. Goal
 Fingerprint a web app and map its content/endpoints — HTTP methods, directories/files, server/tech, and scanners. Placeholders: `<TARGET_IP>`.
 
+## HTTP fundamentals
+Client asks → server responds, in a shared "language" (methods). **Headers** carry metadata (browser, server engine, methods, status). **HTTPS** = HTTP + encryption (not a separate protocol). Website = static HTML(+PHP/JS); web app = fuller program in a browser (GoPhish, etc).
+- **Methods:** `GET` (fetch) · `HEAD` (headers only) · `POST` (send data) · `PUT` (upload) · `DELETE` · `OPTIONS` (list allowed) — extensible, see RFC 9110.
+- **Status codes:** `1xx` info · `2xx` success · `3xx` redirect · `4xx` client error (404/401/403) · `5xx` server error.
+
 ## Tools (install)
 ```bash
 sudo apt install -y gobuster dirb nikto burpsuite sqlmap xsser wpscan hydra
