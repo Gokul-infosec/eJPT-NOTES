@@ -105,6 +105,7 @@ Grouped by the eJPT v2 / PTS course domains. (⬜ Not started · 🟨 In progres
 | [Footprinting & Scanning](02-footprinting-scanning/) | ✅ | 2026-10-27 |
 | [Enumeration](03-enumeration/) | ✅ | 2026-10-27 |
 | [Vulnerability Assessment](04-vulnerability-assessment/) | ✅ | 2026-10-27 |
+| [Auditing Fundamentals](04a-auditing-fundamentals/) | ✅ | 2026-10-27 |
 
 ### Host & Network Penetration Testing
 | Module | Status | Finished |
