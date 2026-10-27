@@ -124,9 +124,18 @@ dirb http://<TARGET_IP>
 hydra -L users.txt -P rockyou.txt example.com http-head /admin/     # basic auth
 hydra -L users.txt -P rockyou.txt example.com http-get /admin/      # digest
 hydra -l admin -P rockyou.txt example.com https-post-form "/login.php:username=^USER^&password=^PASS^&login=Login:Not allowed"
-# metasploit scanners:
-use auxiliary/scanner/http/brute_dirs|robots_txt|http_header|http_login|http_version
+# metasploit auxiliary workflow (setg RHOSTS <TARGET_IP> ; for HTTPS set RPORT 443 + SSL true)
+use auxiliary/scanner/http/http_version      # server/version  (opts: SSL, VHOST, Proxies)
+use auxiliary/scanner/http/http_header       # headers incl X-Powered-By ; set IGN_HEADER '' ; METHOD HEAD|GET
+use auxiliary/scanner/http/robots_txt        # disallowed dirs
+use auxiliary/scanner/http/dir_scanner       # set DICTIONARY <wordlist> ; THREADS 20   (status per dir)
+use auxiliary/scanner/http/files_dir         # set EXTensions php,html,txt ; DICTIONARY
+use auxiliary/scanner/http/backup_file       # set EXTensions bak,old,backup,tmp
+use auxiliary/scanner/http/http_methods      # allowed verbs (PUT/DELETE/OPTIONS)
+use auxiliary/scanner/http/http_login        # set AUTH_URI /secure/ ; USER_FILE + PASS_FILE ; STOP_ON_SUCCESS true
+use auxiliary/scanner/http/apache_userdir_enum   # set USER_FILE  → ~user dirs
 ```
+`401` on a discovered dir = HTTP auth → `http_login` with `AUTH_URI`. Verify dirs manually: `curl -I http://<TARGET_IP>/secure/` (200/401/403). Check `/robots.txt /.htaccess /web.config /phpinfo.php`.
 
 ## SQL (MySQL 3306 / MSSQL 1433)
 ```bash
@@ -145,14 +154,36 @@ hydra -l <USER> -P unix_passwords.txt <TARGET_IP> mysql
 use auxiliary/scanner/mysql/mysql_login|mysql_hashdump|mysql_schemadump
 use auxiliary/scanner/mssql/mssql_login ; use auxiliary/admin/mssql/mssql_exec
 ```
+MySQL metasploit auxiliary workflow (setg RHOSTS):
+```text
+use auxiliary/scanner/mysql/mysql_version    # e.g. 5.5.61
+use auxiliary/scanner/mysql/mysql_login      # set USERNAME root + PASS_FILE ; STOP_ON_SUCCESS true  (opts: USER_AS_PASS/BLANK_PASSWORDS/BRUTEFORCE_SPEED)
+# with creds (set USERNAME + PASSWORD on each):
+use auxiliary/admin/mysql/mysql_enum         # version, users, password hashes, privileges (GRANT/FILE/SUPER)
+use auxiliary/scanner/mysql/mysql_hashdump   # dump user hashes → crack
+use auxiliary/admin/mysql/mysql_schemadump   # whole schema → loot
+use auxiliary/admin/mysql/mysql_sql          # set SQL "show databases;" / run arbitrary SQL
+use auxiliary/admin/mysql/mysql_file_enum    # read files if FILE priv
+```
+Manual client + privesc checks:
+```sql
+mysql -h <TARGET_IP> -u root -p
+SHOW DATABASES; SHOW GRANTS; SELECT user,host,authentication_string FROM mysql.user;
+SELECT @@secure_file_priv;  SELECT file_priv FROM mysql.user WHERE user='root';   -- FILE priv → read/write files
+```
 
 ## SMTP (25)
 ```bash
 sudo nmap -p 25 -sV -sC -O <TARGET_IP>
 nmap -sV -script banner <TARGET_IP>
-nc <TARGET_IP> 25 ; telnet <TARGET_IP> 25    # HELO/EHLO attacker.xyz
+nc <TARGET_IP> 25 ; telnet <TARGET_IP> 25    # HELO/EHLO attacker.xyz ; then VRFY root / VRFY admin / EXPN admin
 smtp-user-enum -U /usr/share/commix/src/txt/usernames.txt -t <TARGET_IP>
-use auxiliary/scanner/smtp/smtp_enum
+# metasploit auxiliary workflow (setg RHOSTS)
+use auxiliary/scanner/smtp/smtp_version      # banner, set RPORT 25,465,587
+use auxiliary/scanner/smtp/smtp_enum         # set USER_FILE (unix_users.txt) ; UNIXONLY true ; VERBOSE
+use auxiliary/scanner/smtp/smtp_relay        # open-relay check
+use auxiliary/scanner/smtp/smtp_ntlm_domain  # NTLM domain disclosure (Exchange)
 ```
+Enumerated SMTP users feed straight into SSH/FTP/SMB brute (password reuse / naming convention). Ports: 25 plain, 465 SSL, 587 TLS.
 
 > Flow per service: nmap version+scripts → try null/anon/default creds → enumerate users/shares/DBs → brute only if needed and approved → note every version string for Vulnerability Assessment.
