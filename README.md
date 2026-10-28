@@ -94,31 +94,31 @@ eJPT-NOTES/
 Grouped by the eJPT v2 / PTS course domains. (⬜ Not started · 🟨 In progress · ✅ Done)
 
 ### Prerequisites
-| Module | Status | Finished |
-|---|---|---|
-| [Networking Fundamentals](00-networking-fundamentals/) | ✅ | 2026-10-27 |
+| Module | Status |
+|---|---|
+| [Networking Fundamentals](00-networking-fundamentals/) | ✅ |
 
 ### Assessment Methodologies
-| Module | Status | Finished |
-|---|---|---|
-| [Information Gathering](01-information-gathering/) | ✅ | 2026-10-27 |
-| [Footprinting & Scanning](02-footprinting-scanning/) | ✅ | 2026-10-27 |
-| [Enumeration](03-enumeration/) | ✅ | 2026-10-27 |
-| [Vulnerability Assessment](04-vulnerability-assessment/) | ✅ | 2026-10-27 |
-| [Auditing Fundamentals](04a-auditing-fundamentals/) | ✅ | 2026-10-27 |
+| Module | Status |
+|---|---|
+| [Information Gathering](01-information-gathering/) | ✅ |
+| [Footprinting & Scanning](02-footprinting-scanning/) | ✅ |
+| [Enumeration](03-enumeration/) | ✅ |
+| [Vulnerability Assessment](04-vulnerability-assessment/) | ✅ |
+| [Auditing Fundamentals](04a-auditing-fundamentals/) | ✅ |
 
 ### Host & Network Penetration Testing
-| Module | Status | Finished |
-|---|---|---|
-| [System / Host-Based Attacks](05-system-host-based-attacks/) | ✅ | 2026-10-27 |
-| [Network-Based Attacks](06-network-based-attacks/) | ✅ | 2026-10-27 |
-| [The Metasploit Framework (MSF)](07-metasploit-framework/) | ✅ | 2026-10-27 |
-| [Exploitation](08-exploitation/) | ✅ | 2026-10-27 |
-| [Post-Exploitation](09-post-exploitation/) | ✅ | 2026-10-27 |
-| [Social Engineering](10-social-engineering/) | ✅ | 2026-10-27 |
+| Module | Status |
+|---|---|
+| [System / Host-Based Attacks](05-system-host-based-attacks/) | ✅ |
+| [Network-Based Attacks](06-network-based-attacks/) | ✅ |
+| [The Metasploit Framework (MSF)](07-metasploit-framework/) | ✅ |
+| [Exploitation](08-exploitation/) | ✅ |
+| [Post-Exploitation](09-post-exploitation/) | ✅ |
+| [Social Engineering](10-social-engineering/) | ✅ |
 
 ### Web Application Penetration Testing
-| Module | Status | Finished |
-|---|---|---|
-| [Web Enumeration & Scanning](11-web-enumeration/) | ✅ | 2026-10-27 |
-| [Web Application Attacks](12-web-attacks/) | ✅ | 2026-10-27 |
+| Module | Status |
+|---|---|
+| [Web Enumeration & Scanning](11-web-enumeration/) | ✅ |
+| [Web Application Attacks](12-web-attacks/) | ✅ |
